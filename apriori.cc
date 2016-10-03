@@ -326,7 +326,8 @@ std::list<Itemset>Apriori::genCandidates(std::list<Itemset>& basis)
                 // }
                 // }
 
-                if (success == true) result.push_back(diff);
+                //if (success == true)
+                result.push_back(diff);
             }
             else break;
         }
