@@ -1,5 +1,6 @@
 CC = g++
-CFLAGS = -c -Wall -std=c++98
+CFLAGS = -c -Wall -std=c++11
+
 OBJS = main.o apriori.o hashTree.o
 
 	# @echo "This is an Apriori algorithm program with HashTree support."

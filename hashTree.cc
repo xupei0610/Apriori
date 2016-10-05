@@ -1,18 +1,31 @@
 /**
     Copyright (c) 2016 <PeiXu xuxx0884@umn.edu>
 
-    Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+       of this software and associated documentation files (the "Software"), to
+       deal in the Software without restriction, including without limitation
+       the rights to use, copy, modify, merge, publish, distribute, sublicense,
+       and/or sell copies of the Software, and to permit persons to whom the
+       Software is furnished to do so, subject to the following conditions:
 
-    The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+    The above copyright notice and this permission notice shall be included in
+       all copies or substantial portions of the Software.
 
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-*/
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+       IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+       FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+       THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+       OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+       ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+       OTHER DEALINGS IN THE SOFTWARE.
+ */
+
 /**
     File: hashTree.cc
     Purpose: Implementation of Hash Tree used in Apriori algorithm
     @author Pei Xu
     @version 1.0 10/3/2016
-*/
+ */
 
 #include "hashTree.h"
 
@@ -48,55 +61,44 @@ int HashTree::hashFunction(const int& v)
     return v % this->hash_range;
 }
 
-Dataset * HashTree::find(const Data& data, Node *parent_node)
+Dataset * HashTree::find(const Data& data, const bool& auto_count)
 {
     if (data.size() == this->data_size)
     {
-        // TODO: Search Legality Check
-        // When use this function outside, parameter parent_node should be given
-        // null
-        // If A possiblly invaild parent is given outside this function, this
-        // may cause a failure when hashing
+        Node *container = this->tree_origin;
+        int   key;
 
-        // Check from the top most node
-        if (parent_node == NULL)
+        for (auto & d : data)
         {
-            parent_node = this->tree_origin;
-        }
+            if (container->dataset.empty())
+            {
+                key = this->hashFunction(d);
 
-        if (parent_node->children.empty() ||
-            (data.size() <= parent_node->level))
-        {
-            return NULL;
-        }
+                if (container->children.find(key) == container->children.end())
+                {
+                    return NULL;
+                }
+                else
+                {
+                    container = container->children[key];
+                    continue;
+                }
+            }
 
-        // Get the possible data container.
-        // This container may be the exact possible container or just an
-        // antecedent node.
-        // For a Level n parent, we check its children in Level n+1; so we need
-        // to hash the n-th data in the given data (counting from 0)
-        int hash_key = hashFunction(data[parent_node->level]);
+            for (auto & da : container->dataset)
+            {
+                if (da->data == data)
+                {
+                    if (auto_count == true)
+                    {
+                        da->count++;
+                    }
 
-        if (parent_node->children.find(hash_key) == parent_node->children.end())
-        {
-            return NULL;
-        }
-
-        Node *container = parent_node->children[hash_key];
-
-        // The corresponding child node is not a leaf node
-        if (container->dataset.empty())
-        {
-            return find(data, container);
-        }
-
-        for (std::list<Dataset *>::iterator it = container->dataset.begin();
-             it != container->dataset.end(); it++)
-        {
-            if ((*it)->data == data) return *it;
+                    return da;
+                }
+            }
         }
     }
-
     return NULL;
 }
 
@@ -115,15 +117,14 @@ bool HashTree::insert(Dataset *dataset, Node *parent_node)
             parent_node = this->tree_origin;
         }
 
-        int hash_key = hashFunction(*(std::next(dataset->data.begin(),
-                                                parent_node->level)));
+        int hash_key = this->hashFunction(*(std::next(dataset->data.begin(),
+                                                      parent_node->level)));
 
         if (parent_node->children.find(hash_key) == parent_node->children.end())
         {
-            std::list<Dataset *> temp_set;
-            temp_set.push_back(dataset);
-            parent_node->children[hash_key] = new Node(temp_set,
-                                                       parent_node->level + 1);
+            parent_node->children[hash_key] =
+                new Node(std::list<Dataset *>({ dataset }),
+                         parent_node->level + 1);
         }
         else
         {
@@ -140,10 +141,9 @@ bool HashTree::insert(Dataset *dataset, Node *parent_node)
             { // The container has been full, and can be splitted.
               // Insert current data to the corresponding child node.
 
-                std::list<Dataset *> temp_set;
-                temp_set.push_back(dataset);
-                container->children[hash_key] = new Node(temp_set,
-                                                         container->level + 1);
+                container->children[hash_key] =
+                    new Node(std::list<Dataset *>({ dataset }),
+                             container->level + 1);
 
                 // Insert current node's all dataset into corresponding child
                 // nodes respectively
@@ -160,11 +160,11 @@ bool HashTree::insert(Dataset *dataset, Node *parent_node)
                     if (container->children.find(hash_key) ==
                         container->children.end())
                     {
-                        temp_set.clear();
-                        temp_set.push_back(*it);
-                        container->children[hash_key] = new Node(temp_set,
-                                                                 container->level +
-                                                                 1);
+                        container->children[hash_key] =
+                            new Node(std::list<Dataset *>(
+                                         { *it }),
+                                     container->level +
+                                     1);
                     }
                     else
                     {
@@ -188,4 +188,116 @@ bool HashTree::insert(Dataset *dataset, Node *parent_node)
     {
         return false;
     }
+}
+
+bool HashTree::findSubsetOf(Data& data, const bool& auto_count)
+{
+    // TODO: no guarantee for the uniqueness and sortness of data
+
+    Dataset *temp_res;
+
+    if (data.size() < this->data_size)
+    {
+        return false;
+    }
+
+    if (data.size() == this->data_size)
+    {
+        temp_res = this->find(data, true);
+
+        if (temp_res == nullptr)
+        {
+            return false;
+        }
+        else
+        {
+            return true;
+        }
+    }
+
+    Node *container = this->tree_origin;
+
+    std::queue<std::tuple<Data, Data::iterator, Node *> > unvisited;
+    std::tuple<Data, Data::iterator, Node * > current;
+    Data current_data;
+    Data::iterator current_it;
+
+    auto it_end = std::next(data.end(), 1 - (int)(this->data_size));
+
+    int  hash_key;
+    for (auto it = data.begin(); it != it_end; it++)
+    {
+        hash_key = this->hashFunction(*it);
+
+        if (container->children.find(hash_key) != container->children.end())
+        {
+            unvisited.push(std::make_tuple(Data({ *it }), it,
+                                           (container->children)[hash_key]));
+        }
+    }
+
+    it_end++;
+
+    bool result = false;
+    while (!unvisited.empty())
+    {
+        current = unvisited.front();
+        unvisited.pop();
+        std::tie(current_data, current_it, container) = current;
+
+        if (container->dataset.empty())
+        {
+            for (auto it = std::next(current_it, 1); it != it_end; it++)
+            {
+                hash_key = this->hashFunction(*it);
+
+                if (container->children.find(hash_key) !=
+                    container->children.end())
+                {
+                    current_data.push_back(*it);
+                    unvisited.push(std::make_tuple(current_data, it,
+                                                   (container->children)[hash_key]));
+                    current_data.pop_back();
+                }
+            }
+            continue;
+        }
+
+        auto it = std::next(current_it, 1);
+        int ds = current_data.size();
+        int k  = this->data_size - ds;
+        int n  = data.size() - ds;
+        std::string bitmask(k, 1);
+        bitmask.resize(n, 0);
+
+        do {
+            current_data.resize(ds);
+
+            for (int i = 0; i < n; ++i)
+            {
+                if (bitmask[i]) {
+                    current_data.push_back(*std::next(it, i));
+                }
+            }
+
+            for (auto & da : container->dataset)
+            {
+                if (da->data == current_data)
+                {
+                    if (auto_count == true)
+                    {
+
+                        this->count_lock.lock();
+                        //std::cout << "entered thread " << std::this_thread::get_id() << std::endl;
+                        da->count++;
+                        //std::cout << "leaving thread " << std::this_thread::get_id() << std::endl;
+                        this->count_lock.unlock();
+                    }
+                    result = true;
+                    break;
+                }
+            }
+        } while (std::prev_permutation(bitmask.begin(), bitmask.end()));
+    }
+    return result;
 }

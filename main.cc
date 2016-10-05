@@ -140,7 +140,7 @@ int main(int argc, char *argv[])
     std::cout << "\t MinSupport: " << min_sup << std::endl;
     std::cout << "\t MinConfidence: " << min_conf << std::endl;
     std::cout << "\t HashRange: " << hfrange << std::endl;
-    std::cout << "\t LeafSize: " << maxleafsize << std::endl;
+    std::cout << "\t MaxLeafSize: " << maxleafsize << std::endl;
     std::cout << "\t Data File: " << input_file << std::endl;
     std::cout << "\t Output File: " << output_file << std::endl;
 
@@ -150,7 +150,7 @@ int main(int argc, char *argv[])
     for (std::map<int, std::vector<int> >::iterator data_item = data.begin();
          data_item != data.end(); ++data_item)
     {
-        apriori.addTranscation(data_item->second);
+        apriori.addTranscation(data_item->first, data_item->second);
     }
     std::cout << " Completed" << std::endl;
 
@@ -178,9 +178,9 @@ int main(int argc, char *argv[])
         time_t rawtime;
         time(&rawtime);
         opstream << "Date: " << ctime(&rawtime);
-        opstream << "Time Used: " << (float)t / CLOCKS_PER_SEC << std::endl;
+        opstream << "Time Used: " << (float)t / CLOCKS_PER_SEC << "s" << std::endl;
         opstream << "Parameters: " << "MinSupport: " << min_sup <<
-        "|MinConfidence: " << "|HashRange: " << hfrange << "|MaxLeafSize: " <<
+        "|MinConfidence: " << min_conf << "|HashRange: " << hfrange << "|MaxLeafSize: " <<
         maxleafsize << std::endl;
         num_of_rules = outputResults(results, opstream);
         opstream.close();
