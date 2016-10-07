@@ -25,12 +25,12 @@
     Purpose: Header file for the implementation of Hash Tree used in Apriori
        algorithm
     @author Pei Xu
-    @version 1.0 10/3/2016
+    @version 0.9 10/7/2016
  */
 
 #ifndef HASHTREE_H
 #define HASHTREE_H
-#include <iostream>
+#include <string>   // use bitmask to generate combination set
 #include <vector>
 #include <map>
 #include <list>
@@ -39,63 +39,61 @@
 #include <algorithm>
 #include <thread>
 #include <mutex>
-#include <chrono>
 
-#include <condition_variable>
+namespace hashTree {
 
-typedef int              Item;
-typedef std::vector<Item>Data;
+    typedef int              Item;
+    typedef std::vector<Item>Data;
 
-struct Dataset
-{
-    Data         data;
-    int unsigned count;
-    Dataset(Data data) : data(data), count(0) {}
-};
+    struct Dataset
+    {
+        Data         data;
+        int unsigned count;
+        Dataset(Data data) : data(data), count(0) {}
+    };
 
-struct Node
-{
-    std::list<Dataset *> dataset;
-    int unsigned         level;
-    std::map<int, Node *>children;
+    struct Node
+    {
+        std::list<Dataset *> dataset;
+        int          level;
+        std::map<int, Node *>children;
 
-    Node() : level(0) {} // Used for building the original node
+        Node() : level(0) {} // Used for building the original node
 
-    Node(std::list<Dataset *>data, int unsigned level) :
-        dataset(data), level(level) {}
+        Node(std::list<Dataset *>data, int unsigned level) :
+            dataset(data), level(level) {}
 
-    ~Node();
-};
+        ~Node();
+    };
 
-class HashTree {
-public:
+    class HashTree {
+    public:
 
-    HashTree(int data_size,
-             int hash_range,
-             int max_leafsize);
-    ~HashTree();
-    std::mutex count_lock;
+        HashTree(int data_size,
+                 int hash_range,
+                 int max_leafsize);
+        ~HashTree();
+        std::mutex count_lock;
 
-    bool     insert(Dataset *dataset,
-                    Node    *parent_node = NULL);
-    Dataset* find(const Data& data,
-                  const bool& auto_count = false);
-    bool     findSubsetOf(Data      & data,
-                          const bool& auto_count);
+        bool     insert(Dataset *dataset);
+        Dataset* find(const Data& data,
+                      const bool& auto_count = false);
+        bool     findSubsetOf(Data       data,
+                              const bool& auto_count);
 
-    // data must be sorted ascendingly, not repeated.
+        // data must be sorted ascendingly, not repeated.
+        int data_size;
 
-protected:
+    protected:
 
-    int hashFunction(const int& v);
-    Node *tree_origin; // Use pointer in order to keep the type the same with
-    // its children
+        int hashFunction(const int& v);
+        Node *tree_origin; // Use pointer in order to keep the type the same with  its children
 
-private:
+    private:
 
-    int unsigned hash_range;
-    int unsigned max_leafsize;
-    int unsigned data_size;
-};
+        int unsigned hash_range;
+        int unsigned max_leafsize;
+    };
+}
 
 #endif // ifndef HASHTREE_H

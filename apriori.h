@@ -25,24 +25,24 @@
     Purpose: Header files for the implementation of Apriori algorithm using Hash
        Tree
     @author Pei Xu
-    @version 1.0 10/3/2016
+    @version 0.9 10/7/2016
  */
 
 #ifndef APRIORI_H
 #define APRIORI_H
 #include <map>
 #include <list>
-#include <forward_list>
 #include <algorithm>
 #include <thread>
-#include <string>  // For generating hash key used to store the frequency or
-                   // support of an itemset
+#include <string>  // For generating hash key used to store the support of an itemset
 #include <sstream> // same to the above
 #include <mutex>
+#include <chrono>   // For record running time
 
 #include "hashTree.h"
 
-typedef Data Itemset;
+namespace apriori {
+typedef hashTree::Data Itemset;
 
 struct Rule
 {
@@ -57,45 +57,62 @@ struct Rule
     float   confidence;
 };
 
-struct Transcation {
+struct Transaction {
     Itemset collection;
-    Transcation(const Itemset& collection);
+    Transaction(const Itemset& collection);
 };
 
 class Apriori {
 public:
-    ~Apriori() {for(auto t : this->transcations) delete t.second;}
-    std::list<Rule>run(const int unsigned& min_support,
-                       const float       & min_conf = 0,
-                       const int unsigned& hash_range = 2,
-                       const int unsigned& max_leafsize = 5);
-    void               addTranscation(const int & id, const Itemset& collection);
+
+    ~Apriori() {
+        for (auto t : this->transactions) delete t.second;
+    }
+
+    void run(const int unsigned& min_support,
+             const float       & min_conf = 0,
+             const int unsigned& hash_range = 2,
+             const int unsigned& max_leafsize = 5);
+    void                      addTransaction(const int    & id,
+                                             const Itemset& collection);
     static inline std::string genFreqTableKey(const Itemset& item_set);
-    std::mutex  lock;
+    static inline Itemset     solveTableKey(const std::string& table_key); // TODO
+    std::map<std::string, int>getFreqTable();
+    std::list<Rule>           getRules();
+    std::mutex lock;
+    double                    getRuleGenTime();
+    double                    getFreqGenTime();
+    std::list<hashTree::Dataset> candidates;
 
 protected:
 
-    std::map<std::string, float> freq_table;
+    std::map<std::string, int> freq_table;
     std::list<Rule> rules;
 
 private:
 
-    std::map<int, Transcation*> transcations;
-    std::list<Dataset>     candidates;
+    std::chrono::duration<double, std::ratio<1> > time_freq_gen;
+    std::chrono::duration<double, std::ratio<1> > time_rule_gen;
+
+    std::map<int, Transaction *> transactions;
 
     int genRules(const Itemset   & item_set,
-                  std::list<Itemset>basis,
-                  const float     & min_conf,
-                  const int       & current_support);
-    static std::list<Itemset>genCandidates(std::list<Itemset>& basis);
+                 std::list<Itemset>basis,
+                 const float     & min_conf,
+                 const int       & current_support);
+    std::list<Itemset>genCandidates(std::list<Itemset>& basis); // basis must be sorted
 
-    // static void              countTransSupport(
-    //     const std::forward_list<Transcation>::iterator trans_before_begin,
-    //     const std::forward_list<Transcation>::iterator trans_end,
-    //     HashTree                        * hashtree
-    //     int & );
-    static void countTransSupport(const std::map<int, Transcation *>::iterator trans_begin, const std::map<int, Transcation *>::iterator trans_end, HashTree *hashtree, std::map<int, Transcation *> * trans_handle, bool * boom, std::mutex * lock, std::list<int> * obsoleted);
-
+    static void       countTransSupport(const std::map<int,
+                                                       Transaction *>::iterator trans_begin,
+                                        const std::map<int,
+                                                       Transaction *>::iterator trans_end,
+                                        hashTree::HashTree                     *hashtree,
+                                        bool                                   *boom,
+                                        std::mutex                             *lock,
+                                        std::list<int>                         *obsoleted,
+                                        const int                             & tid =
+                                            0);
 };
+}
 
 #endif // ifndef APRIORI_H

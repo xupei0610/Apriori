@@ -1,19 +1,15 @@
 CC = g++
 CFLAGS = -c -Wall -std=c++11
-
 OBJS = main.o apriori.o hashTree.o
 
-	# @echo "This is an Apriori algorithm program with HashTree support."
-	# @echo "This program was developed by Pei Xu xuxx0884@umn.edu."
-	# @echo "This program follows MIT license.\n"
-	# @echo "Begin making main program: hcrminer..."
-	#
 all: hcrminer
 	 rm *.o
-	 @echo "\nThis is an Apriori algorithm program with HashTree support."
+	 @echo "\nThis is an Apriori algorithm program using HashTree for support count."
 	 @echo "This program was developed by Pei Xu xuxx0884@umn.edu for CSci5523."
 	 @echo "This program follows MIT license.\n"
-	 @echo "Try ./hcrminer 100 0.2 rules 50 50"
+	 @echo "You can find the resource of this program at https://github.com/xupei0610/Apriori.git"
+	 @echo "Try ./hcrminer 50 0.8 small test_result 20 50"
+	 @echo "Or run ./run.sh to run a whole test. (It may take quite a long time.)"
 
 hcrminer: $(OBJS)
 	$(CC) $(OBJS) -o hcrminer

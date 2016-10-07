@@ -24,23 +24,26 @@
     File: apriori.cc
     Purpose: Implementation of Apriori algorithm using Hash Tree
     @author Pei Xu
-    @version 1.0 10/3/2016
+    @version 0.9 10/7/2016
  */
 
 #include <iostream>
 
 #include "apriori.h"
+using namespace apriori;
 
-void Apriori::addTranscation(const int & id, const Itemset& collection)
+void Apriori::addTransaction(const int& id, const Itemset& collection)
 {
-    this->transcations[id] = new Transcation(collection);
+    this->transactions[id] = new Transaction(collection);
 }
 
-std::list<Rule>Apriori::run(const int unsigned& min_support,
-                            const float       & min_conf,
-                            const int unsigned& hash_range,
-                            const int unsigned& max_leafsize)
+void Apriori::run(const int unsigned& min_support,
+                  const float       & min_conf,
+                  const int unsigned& hash_range,
+                  const int unsigned& max_leafsize)
 {
+    std::cout << "# of transactions: " <<  this->transactions.size() << std::endl;
+
     // Array containing current most requent item sets
     std::list<Itemset> candidates;
     this->candidates.clear();
@@ -50,11 +53,17 @@ std::list<Rule>Apriori::run(const int unsigned& min_support,
     bool success;
     std::list<Itemset> rule_basis;
 
+    // Initialize time recod
+    std::chrono::time_point<std::chrono::high_resolution_clock> clock_rule_gen;
+    std::chrono::time_point<std::chrono::high_resolution_clock> clock_freq_gen =
+        std::chrono::high_resolution_clock::now();
+
     // Initialize ItemSet
     std::map<int, int>::iterator item_table_it;
     std::map<int, int> item_table;
 
-    for (auto & trans : this->transcations)
+
+    for (auto & trans : this->transactions)
     {
         for (auto & item : trans.second->collection)
         {
@@ -76,10 +85,11 @@ std::list<Rule>Apriori::run(const int unsigned& min_support,
             }
         }
     }
+    candidates.sort();
 
-    // Erase Infrequent 1-Itemset from each transcation
-    for (auto trans = this->transcations.begin();
-         trans != this->transcations.end();
+    // Erase Infrequent 1-Itemset from each transaction
+    for (auto trans = this->transactions.begin();
+         trans != this->transactions.end();
          ++trans)
     {
         for (auto item_it = trans->second->collection.begin();
@@ -102,20 +112,27 @@ std::list<Rule>Apriori::run(const int unsigned& min_support,
             }
         }
 
-        if (trans->second->collection.empty()) this->transcations.erase(trans);
+        if (trans->second->collection.empty()) this->transactions.erase(trans);
     }
+
+    this->time_freq_gen = std::chrono::high_resolution_clock::now() -
+                          clock_freq_gen;
 
     int level = 1;
 
-    int multithread = 4;
+    int multithread = 10;
     int iter_times;
+    hashTree::HashTree *tree;
+    bool *boom;
 
     while (candidates.size() > 1)
     {
+        this->candidates.clear();
+
         // TODO: Debug Info
         std::cout << "Level: " <<  level <<
             "; # of Candidates: " << candidates.size() << std::endl;
-        candidates = Apriori::genCandidates(candidates);
+        candidates = this->genCandidates(candidates);
         level++;
 
         // TODO: Debug Info
@@ -124,47 +141,68 @@ std::list<Rule>Apriori::run(const int unsigned& min_support,
 
         if (candidates.size() < 1) break;
 
+        std::map<int,
+                 Transaction *>::iterator it_begin = this->transactions.begin();
+        std::map<int, Transaction *>::iterator it_end;
+        std::list<int> obsoleted;
+        std::vector<std::thread> threads;
+        iter_times = this->transactions.size() / multithread;
+
         // Generating Hash Tree
-        HashTree *tree = new HashTree(level, hash_range, max_leafsize);
+        std::cout << "Planting Hash Tree ..." << std::endl;
+        tree = new hashTree::HashTree(level, hash_range, max_leafsize);
 
         for (auto cand : candidates)
         {
-            this->candidates.push_back(Dataset(Itemset({ cand })));
+            this->candidates.push_back(hashTree::Dataset(Itemset({ cand })));
             tree->insert(&(this->candidates.back()));
         }
 
+        std::cout << "Hash Tree has grown up." << std::endl;
+        candidates.clear();
+
         // Count Support
-        bool *boom                                  = new bool(false);
-        std::map<int, Transcation *>::iterator it_begin = this->transcations.begin();
-        std::map<int, Transcation *>::iterator it_end;
-        std::list<int> obsoleted;
-        std::vector<std::thread> threads;
-        iter_times = this->transcations.size() / multithread;
-        if (iter_times < 200)
+        clock_freq_gen = std::chrono::high_resolution_clock::now();
+
+        boom = new bool(false);
+
+        if (this->transactions.size() < 1000)
         {
+            std::cout << "Begining counting support..." << std::endl;
             *boom = true;
             Apriori::countTransSupport(it_begin,
-                                       this->transcations.end(), tree,
-                                       &(this->transcations), boom, &(this->lock), &obsoleted);
+                                       this->transactions.end(), tree, boom,
+                                       &(this->lock), &obsoleted);
         }
         else
         {
-            multithread = this->transcations.size()/1000 > 4 ? multithread : 4;
-            iter_times = this->transcations.size() / multithread;
+            std::cout << "Starting multi-thread..." << std::endl;
+            multithread = this->transactions.size() / 1000;
+
+            if (multithread == 0)
+            {
+                multithread++;
+            }
+            iter_times = this->transactions.size() / multithread;
+
             for (int i = 0; i < multithread - 1; i++)
             {
                 it_end = std::next(it_begin, iter_times);
                 threads.push_back(std::thread(Apriori::countTransSupport,
                                               it_begin,
-                                              it_end, tree, &(this->transcations),
-                                              boom, &(this->lock), &obsoleted));
+                                              it_end, tree,
+                                              boom, &(this->lock), &obsoleted,
+                                              i + 1));
                 it_begin = it_end;
             }
 
-            threads.push_back(std::thread(Apriori::countTransSupport, it_begin,
-                                          this->transcations.end(), tree,
-                                          &(this->transcations),
-                                          boom, &(this->lock), &obsoleted));
+            threads.push_back(std::thread(Apriori::countTransSupport,
+                                          it_begin,
+                                          this->transactions.end(), tree,
+                                          boom, &(this->lock), &obsoleted,
+                                          multithread));
+
+            std::cout << "Begining counting support..." << std::endl;
             *boom = true;
 
             for (auto & th: threads)
@@ -176,13 +214,37 @@ std::list<Rule>Apriori::run(const int unsigned& min_support,
         delete tree;
         delete boom;
 
-        for(auto & o : obsoleted)
+        std::cout << "Abandoning abandoned transactions..." << std::endl;
+
+        for (auto & o : obsoleted)
         {
-            this->transcations.erase(o);
+            this->transactions.erase(o);
+        }
+
+        this->time_freq_gen +=
+            (std::chrono::high_resolution_clock::now() - clock_freq_gen);
+
+        // No need to generate Rules
+        if (min_conf < 0)
+        {
+            for (auto & cand: this->candidates)
+            {
+                if (cand.count >= min_support)
+                {
+                    this->rules.push_back(Rule(Itemset(cand.data), Itemset(),
+                                               cand.count, -1));
+                    candidates.push_back(cand.data);
+                    this->freq_table[Apriori::genFreqTableKey(cand.data)] =
+                        cand.count;
+                }
+            }
+            std::cout << std::endl;
+            continue;
         }
 
         // Generate Rules
-        candidates.clear();
+        std::cout << "Generating rules..." << std::endl;
+        clock_rule_gen = std::chrono::high_resolution_clock::now();
 
         for (auto & cand : this->candidates)
         {
@@ -191,8 +253,10 @@ std::list<Rule>Apriori::run(const int unsigned& min_support,
             if (cand.count < min_support)
             {
                 success = false;
+
+                // TODO: 删掉含有这个项集的事务中对应的项集
             }
-            else if (cand.data.size() > 2)
+            else if (level > 2)
             {
                 rule_basis.clear();
 
@@ -214,10 +278,11 @@ std::list<Rule>Apriori::run(const int unsigned& min_support,
                     cand.count;
             }
         }
+        this->time_rule_gen +=
+            (std::chrono::high_resolution_clock::now() - clock_rule_gen);
 
-        this->candidates.clear();
+        std::cout << std::endl;
     }
-    return this->rules;
 }
 
 int Apriori::genRules(const Itemset   & itemset,
@@ -235,7 +300,7 @@ int Apriori::genRules(const Itemset   & itemset,
         std::set_difference(itemset.begin(), itemset.end(),
                             it->begin(), it->end(),
                             std::inserter(diff, diff.begin()));
-
+        // Reliable source of itemsets from genCandidates()
         conf = (float)current_support /
                this->freq_table[Apriori::genFreqTableKey(diff)];
 
@@ -252,7 +317,7 @@ int Apriori::genRules(const Itemset   & itemset,
 
     if ((count > 0) &&  (itemset.size() - (basis.begin())->size() > 1))
     {
-        return this->genRules(itemset, Apriori::genCandidates(basis), min_conf,
+        return this->genRules(itemset, this->genCandidates(basis), min_conf,
                               current_support);
     }
     else
@@ -293,10 +358,9 @@ std::list<Itemset>Apriori::genCandidates(std::list<Itemset>& basis)
     {
         for (auto itt = std::next(it, 1); itt != basis.end(); itt++)
         {
-            if (std::equal(it->begin(), --(it->end()), itt->begin())) // &&
-                                                                      // it->back()
-                                                                      // <
-                                                                      // itt->back()
+            if (std::equal(it->begin(), --(it->end()), itt->begin()))
+
+            // && it->back() < itt->back()
             {
                 cand.clear();
                 cand = *it;
@@ -308,26 +372,27 @@ std::list<Itemset>Apriori::genCandidates(std::list<Itemset>& basis)
                 // of this function.
                 // if (cand.size() > 2)
                 // {
+
                 for (int i = 0; i < level; i++)
                 {
                     temp_subset.clear();
                     temp_subset = cand;
                     temp_subset.erase(std::next(temp_subset.begin(), i));
 
-                    if (std::find(basis.begin(), basis.end(),
-                                  temp_subset) == basis.end())
+                    if (this->freq_table.find(Apriori::genFreqTableKey(temp_subset))
+                        == this->freq_table.end())
                     {
                         success = false;
                         break;
                     }
                 }
 
-                // }
-
                 if (success == true)
                 {
                     result.push_back(cand);
                 }
+
+                // }
             }
             else break;
         }
@@ -340,11 +405,11 @@ inline std::string Apriori::genFreqTableKey(const Itemset& item_set)
 {
     std::ostringstream key_name;
     std::copy(item_set.begin(), item_set.end(),
-              std::ostream_iterator<Item>(key_name, ","));
+              std::ostream_iterator<hashTree::Item>(key_name, ","));
     return key_name.str();
 }
 
-Transcation::Transcation(const Itemset& collection)
+Transaction::Transaction(const Itemset& collection)
 {
     this->collection = collection;
     auto it          = std::unique(this->collection.begin(),
@@ -354,13 +419,13 @@ Transcation::Transcation(const Itemset& collection)
 }
 
 void Apriori::countTransSupport(
-    const std::map<int, Transcation *>::iterator trans_begin,
-    const std::map<int, Transcation *>::iterator trans_end,
-    HashTree                                *hashtree,
-    std::map<int, Transcation *>                *trans_handle,
+    const std::map<int, Transaction *>::iterator trans_begin,
+    const std::map<int, Transaction *>::iterator trans_end,
+    hashTree::HashTree                                *hashtree,
     bool                                    *boom,
     std::mutex                              *lock,
-    std::list<int>                          *obsoleted)
+    std::list<int>                          *obsoleted,
+    const int&                             tid)
 {
     std::list<int> losers;
     bool search_res;
@@ -376,10 +441,44 @@ void Apriori::countTransSupport(
         }
     }
 
+    if (tid != 0)
+    {
+        std::cout << "Thread #" << tid << " completed." << std::endl;
+    }
+
     lock->lock();
+
     for (auto & d : losers)
     {
         obsoleted->push_back(d);
     }
     lock->unlock();
+}
+
+inline Itemset Apriori::solveTableKey(const std::string& table_key)
+{
+    Itemset result;
+
+    // TODO
+    return result;
+}
+
+std::map<std::string, int>Apriori::getFreqTable()
+{
+    return this->freq_table;
+}
+
+std::list<Rule>Apriori::getRules()
+{
+    return this->rules;
+}
+
+double Apriori::getRuleGenTime()
+{
+    return this->time_rule_gen.count();
+}
+
+double Apriori::getFreqGenTime()
+{
+    return this->time_freq_gen.count();
 }

@@ -24,10 +24,12 @@
     File: hashTree.cc
     Purpose: Implementation of Hash Tree used in Apriori algorithm
     @author Pei Xu
-    @version 1.0 10/3/2016
+    @version 0.9 10/7/2016
  */
 
 #include "hashTree.h"
+
+using namespace hashTree;
 
 Node::~Node()
 {
@@ -76,12 +78,16 @@ Dataset * HashTree::find(const Data& data, const bool& auto_count)
 
                 if (container->children.find(key) == container->children.end())
                 {
-                    return NULL;
+                    return nullptr;
                 }
                 else
                 {
                     container = container->children[key];
-                    continue;
+
+                    if (d != data.back())
+                    {
+                        continue;
+                    }
                 }
             }
 
@@ -99,48 +105,44 @@ Dataset * HashTree::find(const Data& data, const bool& auto_count)
             }
         }
     }
-    return NULL;
+    return nullptr;
 }
 
-bool HashTree::insert(Dataset *dataset, Node *parent_node)
+bool HashTree::insert(Dataset *dataset)
 {
     if (dataset->data.size() == this->data_size)
     {
-        // TODO: Insert Legality Check
-        // When use this function outside, parameter parent_node should be given
-        // null
-        // If A possiblly invaild parent is given outside this function, this
-        // may cause a failure when hashing
+        Node *container = this->tree_origin;
+        int   hash_key;
 
-        if (parent_node == NULL)
+        for (auto & d : dataset->data)
         {
-            parent_node = this->tree_origin;
-        }
-
-        int hash_key = this->hashFunction(*(std::next(dataset->data.begin(),
-                                                      parent_node->level)));
-
-        if (parent_node->children.find(hash_key) == parent_node->children.end())
-        {
-            parent_node->children[hash_key] =
-                new Node(std::list<Dataset *>({ dataset }),
-                         parent_node->level + 1);
-        }
-        else
-        {
-            Node *container = parent_node->children[hash_key];
+            hash_key = this->hashFunction(d);
 
             if (container->dataset.empty())
             {
-                // Check next level if the corresponding child node is not a
-                // leaf, i.e. being splitted.
-                return insert(dataset, container);
-            }
-            else if ((container->dataset.size() == this->max_leafsize) &&
-                     (dataset->data.size() > container->level + 1))
-            { // The container has been full, and can be splitted.
-              // Insert current data to the corresponding child node.
+                if (container->children.find(hash_key) ==
+                    container->children.end())
+                {
+                    container->children[hash_key] =
+                        new Node(std::list<Dataset *>(
+                                     { dataset }), container->level + 1);
+                    return true;
+                }
+                else
+                {
+                    container = container->children[hash_key];
 
+                    if (d != dataset->data.back())
+                    {
+                        continue;
+                    }
+                }
+            }
+
+            if ((container->dataset.size() == this->max_leafsize) &&
+                (this->data_size > container->level))
+            {
                 container->children[hash_key] =
                     new Node(std::list<Dataset *>({ dataset }),
                              container->level + 1);
@@ -148,51 +150,38 @@ bool HashTree::insert(Dataset *dataset, Node *parent_node)
                 // Insert current node's all dataset into corresponding child
                 // nodes respectively
 
-                for (std::list<Dataset *>::iterator it =
-                         container->dataset.begin();
+                for (auto it = container->dataset.begin();
                      it != container->dataset.end(); it++)
                 {
-                    hash_key =
-                        hashFunction(*(std::next((*it)->data.begin(),
-                                                 container->level)));
-
+                    hash_key = hashFunction(((*it)->data)[container->level]);
 
                     if (container->children.find(hash_key) ==
                         container->children.end())
                     {
                         container->children[hash_key] =
                             new Node(std::list<Dataset *>(
-                                         { *it }),
-                                     container->level +
-                                     1);
+                                         { *it }), container->level + 1);
                     }
                     else
                     {
                         container->children[hash_key]->dataset.push_back(*it);
                     }
                 }
-
-                // Clear current node's dataset
                 container->dataset.clear();
             }
             else
             {
-                // Need to split; directly insert to the target container.
                 container->dataset.push_back(dataset);
             }
         }
-
-        return true;
     }
-    else
-    {
-        return false;
-    }
+    return false;
 }
 
-bool HashTree::findSubsetOf(Data& data, const bool& auto_count)
+bool HashTree::findSubsetOf(Data       data,
+                            const bool& auto_count)
 {
-    // TODO: no guarantee for the uniqueness and sortness of data
+    // TODO: no guarantee for the uniqueness and order of data
 
     Dataset *temp_res;
 
@@ -218,13 +207,14 @@ bool HashTree::findSubsetOf(Data& data, const bool& auto_count)
     Node *container = this->tree_origin;
 
     std::queue<std::tuple<Data, Data::iterator, Node *> > unvisited;
-    std::tuple<Data, Data::iterator, Node * > current;
+    std::tuple<Data, Data::iterator, Node *> current;
     Data current_data;
     Data::iterator current_it;
 
     auto it_end = std::next(data.end(), 1 - (int)(this->data_size));
 
-    int  hash_key;
+    int hash_key;
+
     for (auto it = data.begin(); it != it_end; it++)
     {
         hash_key = this->hashFunction(*it);
@@ -236,9 +226,8 @@ bool HashTree::findSubsetOf(Data& data, const bool& auto_count)
         }
     }
 
-    it_end++;
-
     bool result = false;
+
     while (!unvisited.empty())
     {
         current = unvisited.front();
@@ -247,7 +236,9 @@ bool HashTree::findSubsetOf(Data& data, const bool& auto_count)
 
         if (container->dataset.empty())
         {
-            for (auto it = std::next(current_it, 1); it != it_end; it++)
+            it_end = std::next(data.end(), 1 + container->level - this->data_size);
+
+            for (auto it = std::next(current_it, 1); it != it_end;  it++)
             {
                 hash_key = this->hashFunction(*it);
 
@@ -255,8 +246,10 @@ bool HashTree::findSubsetOf(Data& data, const bool& auto_count)
                     container->children.end())
                 {
                     current_data.push_back(*it);
-                    unvisited.push(std::make_tuple(current_data, it,
-                                                   (container->children)[hash_key]));
+                    unvisited.push(std::make_tuple(current_data,
+                                                   it,
+                                                   container->children[
+                                                       hash_key]));
                     current_data.pop_back();
                 }
             }
@@ -266,13 +259,12 @@ bool HashTree::findSubsetOf(Data& data, const bool& auto_count)
         auto it = std::next(current_it, 1);
         int ds = current_data.size();
         int k  = this->data_size - ds;
-        int n  = data.size() - ds;
+        int n  = std::distance(current_it, data.end())-1;
         std::string bitmask(k, 1);
         bitmask.resize(n, 0);
 
         do {
             current_data.resize(ds);
-
             for (int i = 0; i < n; ++i)
             {
                 if (bitmask[i]) {
@@ -286,11 +278,8 @@ bool HashTree::findSubsetOf(Data& data, const bool& auto_count)
                 {
                     if (auto_count == true)
                     {
-
                         this->count_lock.lock();
-                        //std::cout << "entered thread " << std::this_thread::get_id() << std::endl;
                         da->count++;
-                        //std::cout << "leaving thread " << std::this_thread::get_id() << std::endl;
                         this->count_lock.unlock();
                     }
                     result = true;
