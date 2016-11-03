@@ -24,7 +24,7 @@
     File: hashTree.cc
     Purpose: Implementation of Hash Tree used in Apriori algorithm
     @author Pei Xu
-    @version 0.9 10/7/2016
+    @version 0.9 10/24/2016
  */
 
 #include "hashTree.h"
@@ -33,48 +33,70 @@ using namespace hashTree;
 
 Node::~Node()
 {
-    for (std::map<int, Node *>::iterator it = children.begin();
-         it != children.end();
-         it++) delete it->second;
-    children.clear();
+    for (auto & c: this->children) delete c.second;
 }
 
 HashTree::HashTree(int data_size,
                    int hash_range,
                    int max_leafsize)
 {
-    this->hash_range   = hash_range < 2 ? 2 : hash_range;
-    this->max_leafsize = max_leafsize < 2 ? 2 : max_leafsize;
-
-    // TODO: data_size should be greater than 0. There is no meaning when
-    // data_size == 0;
-    this->data_size = data_size;
-
-    this->tree_origin = new Node();
+    this->_hash_range   = hash_range < 1 ? 1000000 : hash_range;
+    this->_max_leafsize = max_leafsize < 1 ? 1 : max_leafsize;
+    this->_data_size    = data_size;
+    this->_tree_origin  = new Node();
+    this->_last_node_id = 0;
 }
 
 HashTree::~HashTree()
 {
-    delete this->tree_origin;
+    delete this->_tree_origin;
 }
 
-int HashTree::hashFunction(const int& v)
+int HashTree::calComboNum(const int& n, const int& k)
 {
-    return v % this->hash_range;
-}
+    int result = 1;
 
-Dataset * HashTree::find(const Data& data, const bool& auto_count)
-{
-    if (data.size() == this->data_size)
+    // TODO: the method of cal combo # may be able to be optimized
+    // Brute Force calculation, should be useful enough in most cases
+    for (int i = n; i >= n - k + 1; --i)
     {
-        Node *container = this->tree_origin;
+        result *= i;
+    }
+
+    for (int i = k; i > 1; i--)
+    {
+        result /= i;
+    }
+    return result;
+}
+
+int HashTree::getDataSize()
+{
+    return this->_data_size;
+}
+
+int HashTree::_genNodeId()
+{
+    return ++this->_last_node_id;
+}
+
+int HashTree::_hashFunc(const int& v)
+{
+    return v % this->_hash_range;
+}
+
+itemTree::Node * HashTree::find(const std::list<int>& data, const int& auto_count)
+{
+    if (data.size() == this->_data_size)
+    {
+        Node *container = this->_tree_origin;
         int   key;
 
         for (auto & d : data)
         {
             if (container->dataset.empty())
             {
-                key = this->hashFunction(d);
+                key = this->_hashFunc(d);
 
                 if (container->children.find(key) == container->children.end())
                 {
@@ -93,11 +115,13 @@ Dataset * HashTree::find(const Data& data, const bool& auto_count)
 
             for (auto & da : container->dataset)
             {
-                if (da->data == data)
+                if (da->dataset == data)
                 {
-                    if (auto_count == true)
+                    if (auto_count > 0)
                     {
-                        da->count++;
+                        this->_count_lock.lock();
+                        da->count += auto_count;
+                        this->_count_lock.unlock();
                     }
 
                     return da;
@@ -108,185 +132,215 @@ Dataset * HashTree::find(const Data& data, const bool& auto_count)
     return nullptr;
 }
 
-bool HashTree::insert(Dataset *dataset)
+bool HashTree::insert(itemTree::Node *dataset)
 {
-    if (dataset->data.size() == this->data_size)
+    if (dataset->dataset.size() == this->_data_size)
     {
-        Node *container = this->tree_origin;
+        Node *container = this->_tree_origin;
         int   hash_key;
 
-        for (auto & d : dataset->data)
+        auto it = dataset->dataset.begin();
+        auto itn = dataset->dataset.end();
+        for (;it!=itn;it++)
         {
-            hash_key = this->hashFunction(d);
 
             if (container->dataset.empty())
             {
+                hash_key = this->_hashFunc(*it);
                 if (container->children.find(hash_key) ==
                     container->children.end())
                 {
                     container->children[hash_key] =
-                        new Node(std::list<Dataset *>(
+                        new Node(this->_genNodeId(), std::list<itemTree::Node *>(
                                      { dataset }), container->level + 1);
                     return true;
                 }
                 else
                 {
                     container = container->children[hash_key];
-
-                    if (d != dataset->data.back())
-                    {
-                        continue;
-                    }
                 }
             }
-
-            if ((container->dataset.size() == this->max_leafsize) &&
-                (this->data_size > container->level))
+            else
             {
-                container->children[hash_key] =
-                    new Node(std::list<Dataset *>({ dataset }),
-                             container->level + 1);
+                break;
+            }
+        }
 
-                // Insert current node's all dataset into corresponding child
-                // nodes respectively
+        if ((container->dataset.size() == this->_data_size) &&
+            (this->_data_size > container->level))
+        {
 
-                for (auto it = container->dataset.begin();
-                     it != container->dataset.end(); it++)
+            // Insert current node's all dataset into corresponding child
+            // nodes respectively
+            while(true)
+            {
+                for (auto itt = container->dataset.begin();
+                     itt != container->dataset.end(); itt++)
                 {
-                    hash_key = hashFunction(((*it)->data)[container->level]);
-
+                    hash_key =
+                    this->_hashFunc(*(std::next((*itt)->dataset.begin(),
+                                                container->level)));
+                    
                     if (container->children.find(hash_key) ==
                         container->children.end())
                     {
                         container->children[hash_key] =
-                            new Node(std::list<Dataset *>(
-                                         { *it }), container->level + 1);
+                        new Node(this->_genNodeId(), std::list<itemTree::Node *>(
+                                                                                 { *itt }), container->level + 1);
                     }
                     else
                     {
-                        container->children[hash_key]->dataset.push_back(*it);
+                        container->children[hash_key]->dataset.push_back(*itt);
                     }
                 }
                 container->dataset.clear();
+                
+                hash_key = this->_hashFunc(*it);
+                
+                if (container->children.find(hash_key) == container->children.end())
+                {
+                    container->children[hash_key] =
+                    new Node(this->_genNodeId(),
+                             std::list<itemTree::Node *>({ dataset }),
+                             container->level + 1);
+                    break;
+                }
+                else
+                {
+                    container = container->children[hash_key];
+                    if ((container->dataset.size() == this->_data_size) &&
+                        (this->_data_size > container->level))
+                    {
+                        it++;
+                        continue;
+                    }
+                    container->dataset.push_back(dataset);
+                    break;
+                }
             }
-            else
-            {
-                container->dataset.push_back(dataset);
-            }
+        }
+        else
+        {
+            container->dataset.push_back(dataset);
         }
     }
     return false;
 }
 
-bool HashTree::findSubsetOf(Data       data,
-                            const bool& auto_count)
+bool HashTree::findSubsetCountLast(std::list<int>dataset,
+                                   const int   & count)
 {
-    // TODO: no guarantee for the uniqueness and order of data
+    bool result = false;
 
-    Dataset *temp_res;
+    Node *container = this->_tree_origin;
 
-    if (data.size() < this->data_size)
-    {
-        return false;
-    }
+    std::queue<std::pair<std::list<int>::iterator, Node *> > unvisited;
+    std::pair<std::list<int>::iterator, Node *> current;
+    std::list<int> current_data;
+    std::list<int>::iterator current_it;
+    std::list<int> visited;
 
-    if (data.size() == this->data_size)
-    {
-        temp_res = this->find(data, true);
-
-        if (temp_res == nullptr)
-        {
-            return false;
-        }
-        else
-        {
-            return true;
-        }
-    }
-
-    Node *container = this->tree_origin;
-
-    std::queue<std::tuple<Data, Data::iterator, Node *> > unvisited;
-    std::tuple<Data, Data::iterator, Node *> current;
-    Data current_data;
-    Data::iterator current_it;
-
-    auto it_end = std::next(data.end(), 1 - (int)(this->data_size));
+    auto it_end = std::next(dataset.end(), 1 - (int)(this->_data_size));
 
     int hash_key;
 
-    for (auto it = data.begin(); it != it_end; it++)
+    for (auto it = dataset.begin(); it != it_end; it++)
     {
-        hash_key = this->hashFunction(*it);
+        hash_key = this->_hashFunc(*it);
 
         if (container->children.find(hash_key) != container->children.end())
         {
-            unvisited.push(std::make_tuple(Data({ *it }), it,
-                                           (container->children)[hash_key]));
+            unvisited.push(
+                std::make_pair(it, container->children[hash_key])
+                );
         }
     }
 
-    bool result = false;
-
+    std::list<int> max(std::next(dataset.end(), -this->_data_size), dataset.end());
+    
     while (!unvisited.empty())
     {
         current = unvisited.front();
         unvisited.pop();
-        std::tie(current_data, current_it, container) = current;
-
+        current_it = std::move(current.first);
+        container  = std::move(current.second);
+        bool test = true;
         if (container->dataset.empty())
         {
-            it_end = std::next(data.end(), 1 + container->level - this->data_size);
-
-            for (auto it = std::next(current_it, 1); it != it_end;  it++)
+            if (this->_data_size - container->level == 1)
             {
-                hash_key = this->hashFunction(*it);
+                hash_key = this->_hashFunc(dataset.back());
 
                 if (container->children.find(hash_key) !=
                     container->children.end())
                 {
-                    current_data.push_back(*it);
-                    unvisited.push(std::make_tuple(current_data,
-                                                   it,
-                                                   container->children[
-                                                       hash_key]));
-                    current_data.pop_back();
+                    container  = container->children[hash_key];
+                    current_it = std::next(dataset.end(), -2);
+                    test = false;
                 }
             }
-            continue;
+            else
+            {
+                it_end = std::next(
+                    dataset.end(), 1 + container->level - this->_data_size);
+
+                for (auto it = std::next(current_it, 1); it != it_end; it++)
+                {
+                    hash_key = this->_hashFunc(*it);
+
+                    if (container->children.find(hash_key) !=
+                        container->children.end())
+                    {
+                        unvisited.push(
+                            std::make_pair(it, container->children[hash_key])
+                            );
+                    }
+                }
+                continue;
+            }
         }
 
-        auto it = std::next(current_it, 1);
-        int ds = current_data.size();
-        int k  = this->data_size - ds;
-        int n  = std::distance(current_it, data.end())-1;
-        std::string bitmask(k, 1);
-        bitmask.resize(n, 0);
-
-        do {
-            current_data.resize(ds);
-            for (int i = 0; i < n; ++i)
-            {
-                if (bitmask[i]) {
-                    current_data.push_back(*std::next(it, i));
-                }
-            }
+//        // TODO: This is just a simple upper bound; so a bucket still may be
+//        // checked wholely.
+//        // I have no idea to cal an accurate combo # for the bucket in such
+//        // a hash tree.
+//        int cnk = HashTree::calComboNum(dataset.size() - 1, this->_data_size - 1);
+//        
+//        int matched = 0;
+        
+        if (std::find(visited.begin(), visited.end(),
+                      container->id) == visited.end())
+        {
+            std::list<int> diff;
+            visited.push_back(container->id);
 
             for (auto & da : container->dataset)
             {
-                if (da->data == current_data)
+                if (da->dataset.back() == dataset.back())
                 {
-                    if (auto_count == true)
+                    diff.clear();
+
+                    std::set_difference(da->dataset.begin(), da->dataset.end(),
+                                        dataset.begin(),
+                                        dataset.end(), diff.begin());
+
+                    if (diff.empty())
                     {
-                        this->count_lock.lock();
-                        da->count++;
-                        this->count_lock.unlock();
+                        while (!this->_count_lock.try_lock()) {}
+                        da->count += count;
+                        this->_count_lock.unlock();
+                        result = true;
+//                        matched++;
+//                        if (matched>cnk)
+//                        {
+//                            std::cout << "cnk " << cnk << "/n:" << dataset.size()-1 << "/k:" << this->_data_size - 1 << std::endl;
+//                            break;
+//                        }
                     }
-                    result = true;
-                    break;
                 }
             }
-        } while (std::prev_permutation(bitmask.begin(), bitmask.end()));
+        }
     }
+
     return result;
 }

@@ -25,75 +25,78 @@
     Purpose: Header file for the implementation of Hash Tree used in Apriori
        algorithm
     @author Pei Xu
-    @version 0.9 10/7/2016
+    @version 0.9 10/24/2016
  */
 
 #ifndef HASHTREE_H
 #define HASHTREE_H
-#include <string>   // use bitmask to generate combination set
-#include <vector>
+
 #include <map>
 #include <list>
 #include <queue>
-#include <tuple>
 #include <algorithm>
-#include <thread>
 #include <mutex>
 
+#include "itemTree.h"
+
 namespace hashTree {
+// struct Dataset
+// {
+//     std::list<int>data;
+//     int unsigned  count;
+//     Dataset(std::list<int>data) : data(data), count(0) {}
+// };
 
-    typedef int              Item;
-    typedef std::vector<Item>Data;
+struct Node
+{
+    int id;
 
-    struct Dataset
-    {
-        Data         data;
-        int unsigned count;
-        Dataset(Data data) : data(data), count(0) {}
-    };
+    // std::list<Dataset *> dataset;
+    std::list<itemTree::Node *>dataset;
+    int                        level;
+    std::map<int, Node *>      children;
 
-    struct Node
-    {
-        std::list<Dataset *> dataset;
-        int          level;
-        std::map<int, Node *>children;
+    Node() : id(0), level(0) {}
 
-        Node() : level(0) {} // Used for building the original node
+    // Node(int id, std::list<Dataset *>data, int unsigned level) :
+    // id(id), dataset(data), level(level) {
+    // }
+    Node(int id, std::list<itemTree::Node *>data, int unsigned level) :
+        id(id), dataset(data), level(level) {}
 
-        Node(std::list<Dataset *>data, int unsigned level) :
-            dataset(data), level(level) {}
+    ~Node();
+};
 
-        ~Node();
-    };
+class HashTree {
+public:
 
-    class HashTree {
-    public:
+    HashTree(int data_size,
+             int hash_range,
+             int max_leafsize);
+    ~HashTree();
+    bool              insert(itemTree::Node *dataset);
+    itemTree::Node  * find(const std::list<int>& data,
+                           const int           & auto_count = 0);
+    bool              findSubsetCountLast(std::list<int>dataset,
+                                          const int   & count);
+    inline static int calComboNum(const int& n,
+                                  const int& k);
+    int               getDataSize();
 
-        HashTree(int data_size,
-                 int hash_range,
-                 int max_leafsize);
-        ~HashTree();
-        std::mutex count_lock;
+protected:
 
-        bool     insert(Dataset *dataset);
-        Dataset* find(const Data& data,
-                      const bool& auto_count = false);
-        bool     findSubsetOf(Data       data,
-                              const bool& auto_count);
+    int _hashFunc(const int& v);
+    std::mutex _count_lock;
 
-        // data must be sorted ascendingly, not repeated.
-        int data_size;
+private:
 
-    protected:
-
-        int hashFunction(const int& v);
-        Node *tree_origin; // Use pointer in order to keep the type the same with  its children
-
-    private:
-
-        int unsigned hash_range;
-        int unsigned max_leafsize;
-    };
+    int unsigned _hash_range;
+    int unsigned _max_leafsize;
+    int   _last_node_id;
+    Node *_tree_origin;
+    int   _data_size;
+    int _genNodeId();
+};
 }
 
 #endif // ifndef HASHTREE_H

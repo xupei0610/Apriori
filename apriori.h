@@ -25,7 +25,7 @@
     Purpose: Header files for the implementation of Apriori algorithm using Hash
        Tree
     @author Pei Xu
-    @version 0.9 10/7/2016
+    @version 0.9 10/24/2016
  */
 
 #ifndef APRIORI_H
@@ -33,16 +33,19 @@
 #include <map>
 #include <list>
 #include <algorithm>
-#include <thread>
-#include <string>  // For generating hash key used to store the support of an itemset
-#include <sstream> // same to the above
-#include <mutex>
-#include <chrono>   // For record running time
+#include <chrono>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <iterator>
 
+#include "transTree.h"
+#include "itemTree.h"
 #include "hashTree.h"
 
 namespace apriori {
-typedef hashTree::Data Itemset;
+typedef int            Item;
+typedef std::list<Item>Itemset;
 
 struct Rule
 {
@@ -60,59 +63,63 @@ struct Rule
 struct Transaction {
     Itemset collection;
     Transaction(const Itemset& collection);
+    std::list<Itemset>itemsets;
 };
+}
 
+
+namespace apriori {
 class Apriori {
 public:
 
-    ~Apriori() {
-        for (auto t : this->transactions) delete t.second;
-    }
+    Apriori();
 
-    void run(const int unsigned& min_support,
+    ~Apriori();
+    int run(const int unsigned& min_support,
              const float       & min_conf = 0,
-             const int unsigned& hash_range = 2,
+             const int unsigned& hash_range = 100000,
              const int unsigned& max_leafsize = 5);
-    void                      addTransaction(const int    & id,
-                                             const Itemset& collection);
-    static inline std::string genFreqTableKey(const Itemset& item_set);
-    static inline Itemset     solveTableKey(const std::string& table_key); // TODO
-    std::map<std::string, int>getFreqTable();
-    std::list<Rule>           getRules();
-    std::mutex lock;
-    double                    getRuleGenTime();
-    double                    getFreqGenTime();
-    std::list<hashTree::Dataset> candidates;
+    void    setOutputStream(std::ostream * output_stream);
+    void           addTransaction(const int    & id,
+                                  const Itemset& collection);
+
+    int            getFreq(const Itemset& itemset);
+
+    std::list<Rule>getRules();
+    double         getRuleGenTime();
+    double         getFreqGenTime();
 
 protected:
 
-    std::map<std::string, int> freq_table;
+    std::map<Itemset, int> freq_table;
+    std::map<int, std::list<int> > item_table;  // record associated trans
+    std::map<int, int> item_table2;  // record support onlye
     std::list<Rule> rules;
 
 private:
 
-    std::chrono::duration<double, std::ratio<1> > time_freq_gen;
-    std::chrono::duration<double, std::ratio<1> > time_rule_gen;
+    int unsigned _hash_range;
+    int unsigned _max_leafsize;
+    int unsigned _min_sup;
+    float _min_conf;
+    std::ostream * _opstream;
 
-    std::map<int, Transaction *> transactions;
+    transTree::TransTree *_trans_tree;
+    itemTree::ItemTree   *_item_tree;
+    std::chrono::duration<double, std::ratio<1> > _time_freq_gen;
+    std::chrono::duration<double, std::ratio<1> > _time_rule_gen;
 
-    int genRules(const Itemset   & item_set,
-                 std::list<Itemset>basis,
-                 const float     & min_conf,
-                 const int       & current_support);
-    std::list<Itemset>genCandidates(std::list<Itemset>& basis); // basis must be sorted
-
-    static void       countTransSupport(const std::map<int,
-                                                       Transaction *>::iterator trans_begin,
-                                        const std::map<int,
-                                                       Transaction *>::iterator trans_end,
-                                        hashTree::HashTree                     *hashtree,
-                                        bool                                   *boom,
-                                        std::mutex                             *lock,
-                                        std::list<int>                         *obsoleted,
-                                        const int                             & tid =
-                                            0);
+    std::map<int, Transaction *> _transactions;
+    void              _setFreq(const Itemset& itemset,
+                               const int    & sup);
+    int               _genRules(const Itemset& itemset, const int & current_sup);
+    std::list<Itemset>_genCands(std::list<Itemset>& basis);
+    void _plantTransTree(const int & level);
+    void __rebuildTransTree(const int & level);
+    void _addRule(const std::list<int> & lhs, const std::list<int> & rhs, const int & support, const float & confidence);
+    
 };
 }
+
 
 #endif // ifndef APRIORI_H
